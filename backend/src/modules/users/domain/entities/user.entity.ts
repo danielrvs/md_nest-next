@@ -74,11 +74,15 @@ export class User {
             data.name,
             data.role ?? UserRole.PATIENT,
             passwordHash,
-            data.phoneNumber ?? null,
-            null,
-            true,
-            now,
-            now,
+            null,                      // passwordResetToken
+            null,                      // passwordResetExpiresAt
+            null,                      // mfaSecret
+            null,                      // mfaFactorConfirmedAt
+            data.phoneNumber ?? null,  // phoneNumber
+            null,                      // emailVerified
+            true,                      // isActive
+            now,                       // createdAt
+            now,                       // updatedAt
         );
     }
 
