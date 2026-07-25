@@ -1,9 +1,24 @@
 {
-  "moduleFileExtensions": ["js", "json", "ts"],
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "ts"
+  ],
   "rootDir": ".",
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
-  }
+  },
+  "moduleNameMapper": {
+    "^@/(.*)$": "<rootDir>/../src/$1",
+    "^generated/(.*)$": "<rootDir>/../generated/$1"
+  },
+  "setupFilesAfterEnv": [
+    "../test/jest-setup.ts",
+    "jest-extended/all"
+  ],
+  "transformIgnorePatterns": [
+    "node_modules/(?!(@paralleldrive/cuid2|@faker-js|@noble|otplib|@scure|@otplib)/)"
+  ]
 }

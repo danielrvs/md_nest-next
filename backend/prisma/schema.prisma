@@ -43,16 +43,20 @@ model Appointment {
 }
 
 model User {
-    id            String    @id @default(uuid())
-    email         String    @unique
-    name          String
-    phoneNumber   String?   @unique @map("phone_number")
-    role          UserRole  @default(PATIENT)
-    password      String?
-    emailVerified DateTime? @map("email_verified")
-    isActive      Boolean   @default(true) @map("is_active")
-    createdAt     DateTime  @default(now()) @map("created_at")
-    updatedAt     DateTime  @updatedAt @map("updated_at")
+    id                     String    @id @default(uuid())
+    email                  String    @unique
+    name                   String
+    phoneNumber            String?   @unique @map("phone_number")
+    role                   UserRole  @default(PATIENT)
+    password               String?
+    passwordResetToken     String?   @map("password_reset_token") @db.VarChar(255)
+    passwordResetExpiresAt DateTime? @map("password_reset_expires_at")
+    mfaSecret              String?   @map("mfa_secret") @db.Text
+    mfaFactorConfirmedAt   DateTime? @map("mfa_factor_confirmed_at")
+    emailVerified          DateTime? @map("email_verified")
+    isActive               Boolean   @default(true) @map("is_active")
+    createdAt              DateTime  @default(now()) @map("created_at")
+    updatedAt              DateTime  @updatedAt @map("updated_at")
 
     doctorProfile       DoctorProfile?
     patientAppointments Appointment[]        @relation("PatientAppointments")
@@ -60,6 +64,8 @@ model User {
     scheduleRules       ScheduleRules[]
     scheduleAbsences    ScheduleAbsences[]
     doctorsSpecialties  DoctorsSpecialties[]
+    refreshTokens       RefreshToken[]
+    mfaBackupCodes      MfaBackupCodes[]
 
     @@map("users")
 }
@@ -145,4 +151,34 @@ model ScheduleAbsences {
 
     @@index([userId, startTime, endTime])
     @@map("schedule_absences")
+}
+
+model RefreshToken {
+    id        String   @id @default(uuid())
+    userId    String   @map("user_id")
+    token     String   @unique @db.VarChar(255)
+    expiresAt DateTime @map("expires_at")
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([token, userId])
+    @@index([userId])
+    @@map("refresh_tokens")
+}
+
+model MfaBackupCodes {
+    id        String   @id @default(uuid())
+    userId    String   @map("user_id")
+    code      String   @unique @db.VarChar(255)
+    used      Boolean  @default(false) @map("used")
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([code, userId])
+    @@index([userId])
+    @@map("mfa_backup_codes")
 }
