@@ -1,0 +1,148 @@
+generator client {
+    provider = "prisma-client"
+    output   = "../generated/prisma"
+}
+
+datasource db {
+    provider = "postgresql"
+}
+
+enum UserRole {
+    ADMIN   @map("admin")
+    DOCTOR  @map("doctor")
+    PATIENT @map("patient")
+}
+
+enum AppointmentStatus {
+    PENDING   @map("pending")
+    CONFIRMED @map("confirmed")
+    CANCELLED @map("cancelled")
+    COMPLETED @map("completed")
+    NO_SHOW   @map("no_show")
+}
+
+model Appointment {
+    id          String            @id @default(uuid())
+    title       String
+    description String?
+    status      AppointmentStatus @default(PENDING)
+    startTime   DateTime
+    endTime     DateTime
+    createdAt   DateTime          @default(now())
+    updatedAt   DateTime          @updatedAt
+    patientId   String
+    doctorId    String
+
+    patient User @relation("PatientAppointments", fields: [patientId], references: [id], onDelete: Cascade)
+    doctor  User @relation("DoctorAppointments", fields: [doctorId], references: [id], onDelete: Cascade)
+
+    @@index([doctorId, startTime, endTime])
+    @@index([patientId, startTime])
+    @@index([status])
+    @@map("appointments")
+}
+
+model User {
+    id            String    @id @default(uuid())
+    email         String    @unique
+    name          String
+    phoneNumber   String?   @unique @map("phone_number")
+    role          UserRole  @default(PATIENT)
+    password      String?
+    emailVerified DateTime? @map("email_verified")
+    isActive      Boolean   @default(true) @map("is_active")
+    createdAt     DateTime  @default(now()) @map("created_at")
+    updatedAt     DateTime  @updatedAt @map("updated_at")
+
+    doctorProfile       DoctorProfile?
+    patientAppointments Appointment[]        @relation("PatientAppointments")
+    doctorAppointments  Appointment[]        @relation("DoctorAppointments")
+    scheduleRules       ScheduleRules[]
+    scheduleAbsences    ScheduleAbsences[]
+    doctorsSpecialties  DoctorsSpecialties[]
+
+    @@map("users")
+}
+
+model DoctorProfile {
+    id              String   @id @default(uuid())
+    userId          String   @unique @map("user_id")
+    licenseNumber   String   @unique @map("license_number")
+    bio             String?
+    consultationFee Decimal? @map("consultation_fee") @db.Decimal(10, 2)
+    isVerified      Boolean  @default(false) @map("is_verified")
+    avatar          String?
+    createdAt       DateTime @default(now()) @map("created_at")
+    updatedAt       DateTime @updatedAt @map("updated_at")
+
+    doctor      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+    specialties DoctorsSpecialties[]
+
+    @@map("doctor_profiles")
+}
+
+model Specialty {
+    id          String               @id @default(uuid())
+    name        String
+    slug        String               @unique
+    description String?
+    icon        String?
+    image       String?
+    isActive    Boolean              @default(true)
+    createdAt   DateTime             @default(now())
+    updatedAt   DateTime             @updatedAt
+    doctors     DoctorsSpecialties[]
+
+    @@map("specialties")
+}
+
+model DoctorsSpecialties {
+    id              String   @id @default(uuid())
+    doctorProfileId String
+    specialtyId     String
+    createdAt       DateTime @default(now())
+    updatedAt       DateTime @updatedAt
+
+    doctor    DoctorProfile @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
+    specialty Specialty     @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
+    user      User?         @relation(fields: [userId], references: [id])
+    userId    String?
+
+    @@unique([doctorProfileId, specialtyId])
+    @@index([doctorProfileId])
+    @@index([specialtyId])
+    @@map("doctors_specialties")
+}
+
+model ScheduleRules {
+    id           String   @id @default(uuid())
+    userId       String
+    dayOfWeek    Int // 1 = Monday, 2 = Tuesday, etc. 7 = Sunday
+    startTime    String // "HH:mm"
+    endTime      String // "HH:mm"
+    slotDuration Int // Minutes
+    bufferTime   Int // Minutes
+    createdAt    DateTime @default(now())
+    updatedAt    DateTime @updatedAt
+
+    doctor User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([userId, dayOfWeek, startTime, endTime])
+    @@index([userId, dayOfWeek])
+    @@map("schedule_rules")
+}
+
+model ScheduleAbsences {
+    id        String   @id @default(uuid())
+    userId    String
+    startTime DateTime
+    endTime   DateTime
+    reason    String
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    doctor User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([userId, startTime, endTime])
+    @@map("schedule_absences")
+}
