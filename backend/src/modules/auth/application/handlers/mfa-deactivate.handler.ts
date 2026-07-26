@@ -22,10 +22,9 @@ export class MfaDeactivateHandler implements ICommandHandler<MfaDeactivateComman
             throw new NotFoundException('User not found');
         }
 
-        if (!userFound.isMFAEnabled()) {
-            throw new BadRequestException('MFA is not activated');
+        if (!userFound.mfaSecret) {
+            throw new BadRequestException('MFA secret not found');
         }
-
 
         const isValid = await this.mfaValidator.validate(userFound.mfaSecret, totpCode);
 

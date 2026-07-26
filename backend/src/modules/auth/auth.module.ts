@@ -38,7 +38,7 @@ import { AuthMailerAdapter } from "./infrastructure/adapters/auth-mailer.adapter
 const commandHandlers = [
     LoginHandler, LogoutHandler, MfaSetupHandler, MfaChallengeHandler, MfaActivateHandler, MfaDeactivateHandler, RegisterHandler, ForgotPasswordHandler, ResetPasswordHandler
 ]
-const queriesHandlers = []
+const queriesHandlers: any[] = [];
 const eventsHandler = [ForgotPasswordEventHandler, UserRegisteredEventHandler, ResetPasswordEventHandler]
 
 @Module({

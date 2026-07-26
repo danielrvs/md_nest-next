@@ -20,8 +20,8 @@ export class LoginHandler implements ICommandHandler<LoginCommand> {
         private readonly refreshTokenRepository: RefreshTokenRepositoryPort,
         private readonly configService: ConfigService
     ) {
-        this.accessTokenExpiresIn = this.configService.get<number>('auth.accessTokenExpiry');
-        this.refreshTokenExpiresIn = this.configService.get<number>('auth.refreshTokenExpiry');
+        this.accessTokenExpiresIn = this.configService.get<number>('auth.accessTokenExpiry') ?? 3600;
+        this.refreshTokenExpiresIn = this.configService.get<number>('auth.refreshTokenExpiry') ?? 604800;
     }
 
     async execute(command: LoginCommand): Promise<LoginResDto | MFALoginResDto> {
@@ -40,6 +40,7 @@ export class LoginHandler implements ICommandHandler<LoginCommand> {
     }
 
     private async validatePassword(user: User, password: string): Promise<void> {
+        if (!user.password) throw new UnauthorizedException("The credentials are not valid");
         const isMatch = await user.password.compare(password);
         if (!isMatch) throw new UnauthorizedException("The credentials are not valid");
     }
@@ -64,7 +65,6 @@ export class LoginHandler implements ICommandHandler<LoginCommand> {
             accessToken: token.accessToken,
             user: {
                 id: user.id,
-                tenantId: user.tenantId,
                 name: user.name,
                 email: user.email.toString(),
                 role: user.role
@@ -76,7 +76,7 @@ export class LoginHandler implements ICommandHandler<LoginCommand> {
     }
 
     private async saveRefreshToken(refreshToken: string, user: User): Promise<void> {
-        const expiresAt = new Date(Date.now() + this.refreshTokenExpiresIn);
+        const expiresAt = new Date(Date.now() + (this.refreshTokenExpiresIn * 1000));
         const newRefreshToken = RefreshToken.create(user.id, refreshToken, expiresAt);
         await this.refreshTokenRepository.create(newRefreshToken);
     }

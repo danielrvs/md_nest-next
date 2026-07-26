@@ -16,20 +16,20 @@ export abstract class PrismaBaseRepository {
         }
     }
 
-    private handlePrismaError(error: any, context?: { resourceName?: string, resourceId?: string }) {
-
+    private handlePrismaError(error: unknown, context?: { resourceName?: string, resourceId?: string }): never {
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            if (error.code === 'P2003') {
+            const prismaError = error as Prisma.PrismaClientKnownRequestError;
+            if (prismaError.code === 'P2003') {
                 const msg = context?.resourceName ? `The resource ${context.resourceName}` : 'Resource not found.';
                 throw new NotFoundException(msg);
             }
 
-            if (error.code === 'P2002') {
-                const fields = (error.meta as any)?.target || [];
+            if (prismaError.code === 'P2002') {
+                const fields = (prismaError.meta as any)?.target || [];
                 throw new ConflictException(`Duplicate entry for fields: ${fields}`);
             }
         }
 
-        throw error;
+        throw error as Error;
     }
 }

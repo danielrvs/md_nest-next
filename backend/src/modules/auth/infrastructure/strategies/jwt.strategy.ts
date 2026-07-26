@@ -19,7 +19,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
                     },
                     ExtractJwt.fromAuthHeaderAsBearerToken()
                 ]),
-            secretOrKey: process.env.JWT_SECRET,
+            secretOrKey: process.env.JWT_SECRET || 'default_jwt_secret_key',
             ignoreExpiration: false,
         })
     }
@@ -32,7 +32,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             } as MfaAuthenticated;
         }
         return {
-            tenantId: payload.tenantId,
             userId: payload.userId,
             name: payload.name,
             email: payload.email,

@@ -16,10 +16,10 @@ export class MfaSetupHandler implements ICommandHandler<MfaSetupCommand, string>
 
         const { user } = command;
 
-        const userFound = await this.userRepository.findByIdWithTenant(user.userId);
+        const userFound = await this.userRepository.findById(user.userId);
         if (!userFound) throw new NotFoundException("User not found");
 
-        const { secret, qrCodeUri } = await this.mfaGenerator.generateMfaSetup(userFound.email.toString(), userFound.tenant.name.toString());
+        const { secret, qrCodeUri } = await this.mfaGenerator.generateMfaSetup(userFound.email.toString(), "Directorio Medico");
 
 
         userFound.setMFASecret(secret);

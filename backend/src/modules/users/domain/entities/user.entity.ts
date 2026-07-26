@@ -117,4 +117,49 @@ export class User {
         this.isActive = true;
         this.updatedAt = new Date();
     }
+
+    isMFAEnabled(): boolean {
+        return this.mfaSecret !== null && this.mfaFactorConfirmedAt !== null;
+    }
+
+    setMFASecret(secret: string): void {
+        this.mfaSecret = secret;
+        this.updatedAt = new Date();
+    }
+
+    enableMFA(): void {
+        this.mfaFactorConfirmedAt = new Date();
+        this.updatedAt = new Date();
+    }
+
+    disableMFA(): void {
+        this.mfaSecret = null;
+        this.mfaFactorConfirmedAt = null;
+        this.updatedAt = new Date();
+    }
+
+    async requestPasswordReset(): Promise<string> {
+        const token = randomUUID();
+        this.passwordResetToken = await PasswordHash.create(token);
+        this.passwordResetExpiresAt = new Date(Date.now() + 3600 * 1000); // 1 hour
+        this.updatedAt = new Date();
+        return token;
+    }
+
+    async resetPassword(newPassword: string, token: string): Promise<void> {
+        if (!this.passwordResetToken || !this.passwordResetExpiresAt) {
+            throw new Error('No password reset requested');
+        }
+        if (this.passwordResetExpiresAt < new Date()) {
+            throw new Error('Password reset token expired');
+        }
+        const isValid = await this.passwordResetToken.compare(token);
+        if (!isValid) {
+            throw new Error('Invalid password reset token');
+        }
+        this.password = await PasswordHash.create(newPassword);
+        this.passwordResetToken = null;
+        this.passwordResetExpiresAt = null;
+        this.updatedAt = new Date();
+    }
 }

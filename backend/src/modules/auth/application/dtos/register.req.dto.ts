@@ -48,22 +48,10 @@ export class RegisterReqDto {
 
     @ApiProperty(
         {
-            example: '4c7e5d9b-5f0e-4a0b-8b2e-5d9b5f0e4a0b',
-            required: true,
-            description: 'Tenant id of the user',
-            type: 'string',
-        }
-    )
-    @IsString()
-    @IsNotEmpty()
-    tenantId: string;
-
-    @ApiProperty(
-        {
-            example: 'viewer',
+            example: UserRole.PATIENT,
             required: false,
             description: 'Role of the user',
-            type: 'string',
+            enum: UserRole,
         }
     )
     @IsEnum(UserRole)

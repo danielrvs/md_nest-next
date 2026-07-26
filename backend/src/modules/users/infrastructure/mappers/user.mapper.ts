@@ -36,10 +36,10 @@ export class UserMapper {
             prismaUser.createdAt,
             prismaUser.updatedAt,
             prismaUser.mfaBackupCodes
-                ? prismaUser.mfaBackupCodes.map((code) => MfaBackupCodesMapper.toDomain(code))
+                ? prismaUser.mfaBackupCodes.map((code: PrismaMfaBackupCodes) => MfaBackupCodesMapper.toDomain(code))
                 : null,
             prismaUser.refreshTokens
-                ? prismaUser.refreshTokens.map((token) => RefreshTokenMapper.toDomain(token))
+                ? prismaUser.refreshTokens.map((token: PrismaRefreshToken) => RefreshTokenMapper.toDomain(token))
                 : null,
         );
     }

@@ -36,8 +36,8 @@ export class AuthController {
         const command = new LoginCommand(dto.email, dto.password);
         const result = await this.commandBus.execute<LoginCommand, LoginResDto | MFALoginResDto>(command);
 
-        const expiresIn = this.configService.get<number>('auth.accessTokenExpiry');
-        const accessTokenName = this.configService.get<string>('auth.accessTokenCookie');
+        const expiresIn = this.configService.get<number>('auth.accessTokenExpiry') ?? 3600;
+        const accessTokenName = this.configService.get<string>('auth.accessTokenCookie') ?? 'access_token';
 
 
         if (result.mfaRequired === true) {
@@ -54,8 +54,8 @@ export class AuthController {
 
 
         const resLogin = result as LoginResDto;
-        const refreshTokenExpiresIn = this.configService.get<number>('auth.refreshTokenExpiry');
-        const refreshTokenName = this.configService.get<string>('auth.refreshTokenCookie');
+        const refreshTokenExpiresIn = this.configService.get<number>('auth.refreshTokenExpiry') ?? 604800;
+        const refreshTokenName = this.configService.get<string>('auth.refreshTokenCookie') ?? 'refresh_token';
 
         res.cookie(accessTokenName, resLogin.accessToken, {
             httpOnly: true,
@@ -85,8 +85,8 @@ export class AuthController {
         @Req() req: any,
         @Res({ passthrough: true }) res: Response
     ): Promise<void> {
-        const accessTokenName = this.configService.get<string>('auth.accessTokenCookie');
-        const refreshTokenName = this.configService.get<string>('auth.refreshTokenCookie');
+        const accessTokenName = this.configService.get<string>('auth.accessTokenCookie') ?? 'access_token';
+        const refreshTokenName = this.configService.get<string>('auth.refreshTokenCookie') ?? 'refresh_token';
 
         const refreshToken = req.cookies?.[refreshTokenName] || req.body?.refreshToken;
         const command = new LogoutCommand(user.userId, refreshToken);
@@ -101,7 +101,7 @@ export class AuthController {
     @HttpCode(HttpStatus.CREATED)
     @ResponseMessage("User registered successfully")
     async register(@Body() dto: RegisterReqDto): Promise<RegisterResDto> {
-        const command = new RegisterCommand(dto.name, dto.email, dto.password, dto.tenantId);
+        const command = new RegisterCommand(dto.name, dto.email, dto.password, dto.role);
         const result = await this.commandBus.execute<RegisterCommand, RegisterResDto>(command);
         return result;
     }

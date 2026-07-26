@@ -9,14 +9,21 @@ import { User } from "@/modules/users/domain/entities/user.entity";
 import { RefreshToken } from "../../domain/entities/refresh-token.entity";
 import { MfaValidatorPort } from "../../domain/ports/mfa-validator.port";
 
+import { ConfigService } from "@nestjs/config";
+
 @CommandHandler(MfaChallengeCommand)
 export class MfaChallengeHandler implements ICommandHandler<MfaChallengeCommand, LoginResDto> {
+    private readonly refreshTokenExpiresIn: number;
+
     constructor(
         private readonly userRepository: UserRepositoryPort,
         private readonly tokenGenerator: TokenGeneratorPort,
         private readonly refreshTokenRepository: RefreshTokenRepositoryPort,
-        private readonly mfaValidator: MfaValidatorPort
-    ) { }
+        private readonly mfaValidator: MfaValidatorPort,
+        private readonly configService: ConfigService
+    ) {
+        this.refreshTokenExpiresIn = this.configService.get<number>('auth.refreshTokenExpiry', 604800);
+    }
 
     async execute(command: MfaChallengeCommand): Promise<LoginResDto> {
         const { userId } = command.user;
@@ -25,7 +32,7 @@ export class MfaChallengeHandler implements ICommandHandler<MfaChallengeCommand,
         const user = await this.userRepository.findById(userId);
         if (!user) throw new UnauthorizedException("Invalid credentials");
 
-        if (!user.isMFAEnabled()) throw new UnauthorizedException("MFA is not enabled");
+        if (!user.isMFAEnabled() || !user.mfaSecret) throw new UnauthorizedException("MFA is not enabled");
 
         const isMfaCodeValid = await this.mfaValidator.validate(user.mfaSecret, totpCode);
         if (!isMfaCodeValid) throw new UnauthorizedException("Invalid MFA code");
@@ -40,7 +47,6 @@ export class MfaChallengeHandler implements ICommandHandler<MfaChallengeCommand,
             accessToken: token.accessToken,
             user: {
                 id: user.id,
-                tenantId: user.tenantId,
                 name: user.name,
                 email: user.email.toString(),
                 role: user.role
@@ -56,7 +62,7 @@ export class MfaChallengeHandler implements ICommandHandler<MfaChallengeCommand,
     }
 
     private async saveRefreshToken(refreshToken: string, user: User): Promise<void> {
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        const expiresAt = new Date(Date.now() + (this.refreshTokenExpiresIn * 1000));
         const newRefreshToken = RefreshToken.create(user.id, refreshToken, expiresAt);
         await this.refreshTokenRepository.create(newRefreshToken);
     }

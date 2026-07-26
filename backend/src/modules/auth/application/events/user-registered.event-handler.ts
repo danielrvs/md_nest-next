@@ -12,7 +12,6 @@ export class UserRegisteredEventHandler implements IEventHandler<UserRegisteredE
 
     async handle(event: UserRegisteredEvent): Promise<void> {
         await this.emailQueue.add('send-welcome', {
-            tenantId: event.tenantId,
             email: event.email,
             name: event.name,
         }, {

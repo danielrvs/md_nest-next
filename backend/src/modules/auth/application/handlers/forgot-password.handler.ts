@@ -15,7 +15,7 @@ export class ForgotPasswordHandler implements ICommandHandler<ForgotPasswordComm
 
     async execute(command: ForgotPasswordCommand): Promise<void> {
         const user = await this.userRepository.findByEmail(command.email);
-        if (!user) throw new NotFoundException('User not found');
+        if (!user) return;
 
         const token = await user.requestPasswordReset();
         await this.userRepository.update(user.id, user);

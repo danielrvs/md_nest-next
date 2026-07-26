@@ -17,19 +17,18 @@ export class JwtTokenGeneratorAdapter implements TokenGeneratorPort {
     async generateToken(user: User): Promise<TokenPayload> {
         const payload: Authenticated = {
             userId: user.id,
-            tenantId: user.tenantId,
             name: user.name,
             email: user.email.toString(),
             role: user.role,
             isMfaPending: false
         }
-        const expiresIn = this.authConfig.get<number>('auth.accessTokenExpiry');
-        const accessToken = this.jwtService.sign(payload, { expiresIn: `${expiresIn}s` });
+        const expiresIn = this.authConfig.get<number>('auth.accessTokenExpiry') ?? 3600;
+        const accessToken = this.jwtService.sign(payload, { expiresIn });
         
-        const refreshExpiresIn = this.authConfig.get<number>('auth.refreshTokenExpiry');
+        const refreshExpiresIn = this.authConfig.get<number>('auth.refreshTokenExpiry') ?? 604800;
         const refreshToken = this.jwtService.sign(
             { userId: user.id, jti: randomUUID() },
-            { expiresIn: `${refreshExpiresIn}s` }
+            { expiresIn: refreshExpiresIn }
         );
 
         return {
@@ -41,12 +40,12 @@ export class JwtTokenGeneratorAdapter implements TokenGeneratorPort {
 
     async generateMfaToken(user: User): Promise<string> {
 
-        const expiresIn = this.authConfig.get<number>('auth.accessTokenExpiry');
+        const expiresIn = this.authConfig.get<number>('auth.accessTokenExpiry') ?? 3600;
         const payload: MfaAuthenticated = {
             userId: user.id,
             isMfaPending: true
         }
-        const mfaToken = this.jwtService.sign(payload, { expiresIn: `${expiresIn}s` });
+        const mfaToken = this.jwtService.sign(payload, { expiresIn });
 
         return mfaToken;
     }

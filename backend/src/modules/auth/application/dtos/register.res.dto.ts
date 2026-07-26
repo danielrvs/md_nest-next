@@ -21,17 +21,8 @@ export class RegisterResDto {
 
     @ApiProperty(
         {
-            example: 'user@example.com',
-            description: 'Email of the user',
-            type: 'string',
-        }
-    )
-    tenantId: string;
-
-    @ApiProperty(
-        {
-            example: 'user@example.com',
-            description: 'Email of the user',
+            example: '2026-01-15T10:30:00.000Z',
+            description: 'Creation date of the user',
             type: 'string',
         }
     )

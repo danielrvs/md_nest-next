@@ -64,10 +64,10 @@ export class MfaController {
         const command = new MfaChallengeCommand(user, dto.totpCode);
         const result = await this.commandBus.execute<MfaChallengeCommand, LoginResDto>(command);
 
-        const expiresIn = this.configService.get<number>('auth.accessTokenExpiry');
-        const accessTokenName = this.configService.get<string>('auth.accessTokenCookie');
-        const refreshTokenExpiresIn = this.configService.get<number>('auth.refreshTokenExpiry');
-        const refreshTokenName = this.configService.get<string>('auth.refreshTokenCookie');
+        const expiresIn = this.configService.get<number>('auth.accessTokenExpiry') ?? 3600;
+        const accessTokenName = this.configService.get<string>('auth.accessTokenCookie') ?? 'access_token';
+        const refreshTokenExpiresIn = this.configService.get<number>('auth.refreshTokenExpiry') ?? 604800;
+        const refreshTokenName = this.configService.get<string>('auth.refreshTokenCookie') ?? 'refresh_token';
 
         res.cookie(accessTokenName, result.accessToken, {
             httpOnly: true,

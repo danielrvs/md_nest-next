@@ -13,7 +13,6 @@ export class ResetPasswordEventHandler implements IEventHandler<ResetPasswordEve
         await this.emailQueue.add('reset-password', {
             email: event.user.email.toString(),
             name: event.user.name,
-            tenantId: event.user.tenantId,
             userId: event.user.id,
         }, {
             attempts: 3,

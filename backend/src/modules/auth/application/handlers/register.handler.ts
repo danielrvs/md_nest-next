@@ -15,7 +15,7 @@ export class RegisterHandler implements ICommandHandler<RegisterCommand, Registe
     ) { }
 
     async execute(command: RegisterCommand): Promise<RegisterResDto> {
-        await this.isUserRegisteredInTenant(command.email, command.tenantId);
+        await this.checkUserExists(command.email);
         const user = await this.persistUser(command);
         await this.sendEvent(user);
         // TODO: should be implemented outbox pattern here, but this is a portfolio project...
@@ -33,19 +33,15 @@ export class RegisterHandler implements ICommandHandler<RegisterCommand, Registe
         return {
             email: user.email.toString(),
             name: user.name,
-            tenantId: user.tenantId,
             createdAt: user.createdAt
         }
     }
 
-    private async isUserRegisteredInTenant(
-        email: string,
-        tenantId: string
-    ): Promise<void> {
-        const foundUser = await this.userRepository.findByEmailAndTenantId(email, tenantId)
+    private async checkUserExists(email: string): Promise<void> {
+        const foundUser = await this.userRepository.findByEmail(email);
 
         if (foundUser) {
-            throw new ConflictException('User with email ' + email + ' already exists in this tenant.')
+            throw new ConflictException('User with email ' + email + ' already exists.')
         }
     }
 
@@ -54,8 +50,7 @@ export class RegisterHandler implements ICommandHandler<RegisterCommand, Registe
             name: command.name,
             email: command.email,
             password: command.password,
-            tenantId: command.tenantId,
-            role: command.role as UserRole ?? UserRole.VIEWER
+            role: command.role as UserRole ?? UserRole.PATIENT
         })
         return await this.userRepository.create(user)
     }
@@ -63,7 +58,6 @@ export class RegisterHandler implements ICommandHandler<RegisterCommand, Registe
     private async sendEvent(user: User): Promise<void> {
         await this.eventBus.publish(new UserRegisteredEvent(
             user.id,
-            user.tenantId,
             user.email.toString(),
             user.name,
             user.role

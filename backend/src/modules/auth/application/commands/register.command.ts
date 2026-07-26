@@ -6,7 +6,6 @@ export class RegisterCommand implements ICommand {
         public readonly name: string,
         public readonly email: string,
         public readonly password: string,
-        public readonly tenantId: string,
         public readonly role?: string | UserRole,
     ) { }
 }

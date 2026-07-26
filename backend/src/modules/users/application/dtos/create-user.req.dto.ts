@@ -1,15 +1,8 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString } from "class-validator";
-import { UserRole } from "generated/prisma/enums";
+import { UserRole } from "../../domain/entities/enums/user-role.enum";
 
 export class CreateUserReqDto {
-    @ApiProperty(
-        { example: '123e4567-e89b-12d3-a456-426614174000', description: 'Unique ID from the tenant. Only Superadmin.' }
-    )
-    @IsString()
-    @IsOptional()
-    tenantId: string;
-
     @ApiProperty({
         example: 'Juan De la Rosa',
         description: 'Full name of the user'
@@ -44,7 +37,7 @@ export class CreateUserReqDto {
     @ApiProperty({
         example: UserRole.ADMIN,
         enum: UserRole,
-        description: 'Role of the user in the tenant'
+        description: 'Role of the user'
     })
     @IsEnum(UserRole)
     @IsNotEmpty()
