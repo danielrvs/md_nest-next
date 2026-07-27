@@ -10,6 +10,10 @@ import { UserModule } from './modules/users/user.module';
 import { PrismaModule } from './shared/infrastructure/prisma/prisma.module';
 import { RedisCacheModule } from './shared/infrastructure/cache/redis-cache.module';
 import { RedisLockModule } from './shared/infrastructure/cache/redis-lock.module';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { AllExceptionsFilter } from './shared/infrastructure/filters/all-exceptions.filter';
+import { TransformInterceptor } from './shared/infrastructure/interceptors/transform.interceptor';
+import { JwtAuthGuard } from './shared/infrastructure/guards/jwt-auth.guard';
 
 @Module({
   imports: [
@@ -41,7 +45,20 @@ import { RedisLockModule } from './shared/infrastructure/cache/redis-lock.module
     AuthModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, 
+    {
+      provide: APP_FILTER,
+      useClass: AllExceptionsFilter
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TransformInterceptor
+    },
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard
+    }
+  ],
 })
-export class AppModule {}
+export class AppModule { }
 
