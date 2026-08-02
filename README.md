@@ -8,10 +8,10 @@ Este repositorio contiene una plataforma moderna, desacoplada y de alto rendimie
 
 La infraestructura del proyecto está completamente dockerizada y estructurada bajo una arquitectura multinodo que incluye los siguientes servicios:
 
-*   **Backend**: **NestJS 11** corriendo sobre **Node.js 24** (TypeScript), utilizando **Prisma ORM** para el acceso a datos.
+*   **Backend**: **NestJS 11** corriendo sobre **Node.js 24** (TypeScript), estructurado bajo **Clean Architecture / Hexagonal + CQRS** y utilizando **Prisma ORM** para el acceso a datos.
 *   **Frontend**: **Next.js 16** (React 19) estructurado bajo App Router y estilado con **Tailwind CSS v4**.
 *   **Base de datos**: **PostgreSQL 18** (Alpine) administrado de forma segura y optimizada (Connection Pool fail-fast).
-*   **Caché y Almacenamiento Key-Value**: **Redis 8.4** integrado mediante la API global de Cache de NestJS (`@nestjs/cache-manager` con adaptador `Keyv`).
+*   **Caché y Almacenamiento Key-Value**: **Redis 8.4** integrado mediante la API global de Cache de NestJS (`@nestjs/cache-manager` con adaptador `Keyv`) aplicando el **Patrón Decorador** para almacenamiento en caché transparente e invalidación automática.
 *   **Gestor de Colas (Mensajería)**: **RabbitMQ** para procesamiento asíncrono y comunicación basada en eventos.
 *   **Almacenamiento de Objetos (S3 compatible)**: **MinIO** para la gestión de media, archivos adjuntos de historiales o imágenes de médicos.
 *   **Servidor de Correo de Pruebas**: **Mailpit** para interceptar y validar el envío de emails durante el desarrollo (notificaciones de citas, etc.).
@@ -60,6 +60,10 @@ Aunque los contenedores están configurados para correr los servicios, puedes ej
    ```bash
    pnpm run start:dev
    ```
+4. Ejecutar la suite de pruebas E2E dentro del contenedor Docker:
+   ```bash
+   docker exec md_nestjs npm run test:e2e
+   ```
 
 #### Frontend (Next.js)
 1. Entra al directorio `frontend`:
@@ -84,7 +88,7 @@ Una vez levantado el entorno con `./start.sh`, los servicios quedan expuestos en
 | Servicio | URL / Puerto | Descripción |
 | :--- | :--- | :--- |
 | **Frontend (Next.js)** | [http://localhost:3002](http://localhost:3002) | Aplicación cliente para los usuarios y pacientes. |
-| **Backend (NestJS)** | [http://localhost:3000](http://localhost:3000) | API REST y WebSocket. Documentación Swagger (si aplica). |
+| **Backend (NestJS)** | [http://localhost:3000](http://localhost:3000) | API REST y WebSocket. Documentación Swagger en `/api/docs`. |
 | **MinIO Console** | [http://localhost:9001](http://localhost:9001) | Panel de administración de archivos (S3 local). API en puerto `9000`. |
 | **Mailpit Web UI** | [http://localhost:8025](http://localhost:8025) | Bandeja de entrada para visualizar los correos salientes del sistema (SMTP en `1025`). |
 | **RabbitMQ Admin** | [http://localhost:15672](http://localhost:15672) | Consola de gestión de colas y exchanges. Protocolo AMQP en `5672`. |
@@ -98,9 +102,13 @@ Una vez levantado el entorno con `./start.sh`, los servicios quedan expuestos en
 ```text
 ├── backend/                     # Servidor backend en NestJS
 │   ├── src/
-│   │   ├── modules/             # Módulos específicos del dominio (auth, doctors, etc.)
-│   │   └── shared/              # Recursos compartidos e infraestructura (Prisma, Redis Cache)
-│   └── test/                    # Tests de integración y E2E
+│   │   ├── modules/             # Módulos del dominio (auth, users, doctors, specialties)
+│   │   │   ├── auth/            # Autenticación JWT, MFA TOTP, Recuperación de contraseña
+│   │   │   ├── users/           # Entidad y repositorio de Usuarios
+│   │   │   ├── doctors/         # Gestión de Perfiles Médicos [BE-DOC-01] & Search Query Service
+│   │   │   └── specialties/     # Catálogo de Especialidades Médicas [BE-DOC-02] & Redis Cache Decorator
+│   │   └── shared/              # Recursos compartidos e infraestructura (Prisma, Redis Cache, Guards, Roles)
+│   └── test/                    # Tests unitarios y suite E2E con TestFactories
 ├── frontend/                    # Servidor frontend en Next.js (App Router)
 │   ├── app/                     # Páginas y componentes del sitio
 │   └── public/                  # Assets estáticos
@@ -116,21 +124,37 @@ Una vez levantado el entorno con `./start.sh`, los servicios quedan expuestos en
 
 ---
 
-## ⚡ Patrones de Infraestructura Aplicados
+## ⚡ Patrones de Arquitectura e Infraestructura Aplicados
 
-### Pool de Conexiones Fail-Fast (Prisma + PostgreSQL)
-Para evitar cuellos de botella en picos de tráfico elevados, la inicialización del cliente de base de datos implementa un pool de conexiones optimizado mediante el adaptador nativo `pg`:
+### 1. Hexagonal + CQRS (Clean Architecture)
+Cada módulo del backend desacopla estrictamente sus capas:
+* **Dominio**: Agregados (`DoctorProfile`, `Specialty`, `User`) con reglas invariantes, métodos estáticos de creación y sin dependencias de I/O ni frameworks.
+* **Aplicación**: Comandos (`CreateDoctorProfileCommand`, `CreateSpecialtyCommand`) y Consultas (`GetDoctorsQuery`) gestionadas de forma explícita mediante `@nestjs/cqrs`. Validaciones paralelizadas con `Promise.all`.
+* **Infraestructura**: Adaptadores de persistencia con Prisma (`PrismaDoctorProfileRepository`, `PrismaSpecialtyRepository`) y convertidores bidireccionales (`DoctorProfileMapper`, `SpecialtyMapper`).
+
+### 2. Patrón Decorador de Caché en Redis (`[BE-DOC-02]`)
+Para evitar contaminar los adaptadores de base de datos con lógica de almacenamiento en caché:
+* **`SpecialtyQueryServicePort`**: Define las operaciones de consulta.
+* **`CachedSpecialtyQueryService`**: Decorador que intercepta la lectura de especialidades activas (`specialties:active`), consulta la memoria en Redis (TTL 60s) y ejecuta la invalidación automática en los handlers de mutación (`POST`, `PATCH`, `DELETE`).
+
+### 3. Separación CQRS con Query Services (`[BE-DOC-01]`)
+* Las consultas de lectura paginadas (`GET /doctors`) utilizan un **Query Service** dedicado (`DoctorQueryServicePort` / `PrismaDoctorQueryService`), optimizado para paginación (`perPage`) y proyecciones sin la sobrecarga de cargar agregados completos de escritura.
+
+### 4. Pool de Conexiones Fail-Fast (Prisma + PostgreSQL)
 * **Fail Fast**: El timeout de espera de conexión está limitado a 5 segundos (`connectionTimeoutMillis: 5000`), evitando colapsar la RAM de Node.js por acumulación de peticiones pendientes ("efecto bola de nieve").
-* **Rendimiento**: Sustitución del motor de conexión nativo de Rust por un pool de Node.js administrado que evita penalizaciones por arranques en frío.
-
-### Caché Distribuida resiliente en Redis
-El backend integra el módulo de caché implementando reintentos exponenciales amortiguados:
-* Ante desconexiones o fallos en el nodo de Redis, la aplicación no cae, sino que aplica una estrategia de reconexión adaptativa (`reconnectStrategy`) garantizando tolerancia a fallos.
+* **Rendimiento**: Uso del adaptador nativo `PrismaPg` que evita penalizaciones por arranques en frío.
 
 ---
 
-## 🔮 Roadmap y Próximos Pasos
+## 🧪 Pruebas y Cobertura (E2E & Unit Tests)
 
-1. **Procesamiento Asíncrono con RabbitMQ**: Implementar colas de mensajería para gestionar el flujo de notificaciones y confirmación de citas de manera asíncrona.
-2. **Definición de Esquemas en Prisma**: Diseñar las tablas relacionales para especialistas, calendarios, citas y ausencias.
-3. **Cobertura E2E en NestJS**: Ampliar los tests en `backend/test` para simular las llamadas API de reserva de citas y evaluar transacciones concurrentes.
+El proyecto cuenta con una suite completa de pruebas E2E aisladas que ejecutan escenarios Gherkin reales contra la base de datos de test (`.env.test`) y Redis:
+
+```bash
+docker exec md_nestjs npm run test:e2e
+```
+
+**Módulos probados:**
+* `specialties-test.e2e-spec.ts`: CRUD de Especialidades, permisos `@Roles(UserRole.ADMIN)` y verificación de caché en Redis + invalidaciones.
+* `doctors-test.e2e-spec.ts`: Creación de Perfil Médico (`DOCTOR`), unicidad de licencia, búsqueda paginada y verificación administrativa por `ADMIN`.
+* `authentication-test.e2e-spec.ts`, `auth-mfa-test.e2e-spec.ts`, `registration-test.e2e-spec.ts`, `password-reset-test.e2e-spec.ts`.
