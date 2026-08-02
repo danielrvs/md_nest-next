@@ -7,6 +7,8 @@ import { AppService } from './app.service';
 import authConfig from './modules/auth/infrastructure/config/auth.config';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/users/user.module';
+import { DoctorsModule } from './modules/doctors/doctors.module';
+import { SpecialtiesModule } from './modules/specialties/specialties.module';
 import { PrismaModule } from './shared/infrastructure/prisma/prisma.module';
 import { RedisCacheModule } from './shared/infrastructure/cache/redis-cache.module';
 import { RedisLockModule } from './shared/infrastructure/cache/redis-lock.module';
@@ -43,6 +45,8 @@ import { JwtAuthGuard } from './shared/infrastructure/guards/jwt-auth.guard';
     RedisLockModule,
     UserModule,
     AuthModule,
+    DoctorsModule,
+    SpecialtiesModule,
   ],
   controllers: [AppController],
   providers: [AppService, 
@@ -61,4 +65,3 @@ import { JwtAuthGuard } from './shared/infrastructure/guards/jwt-auth.guard';
   ],
 })
 export class AppModule { }
-

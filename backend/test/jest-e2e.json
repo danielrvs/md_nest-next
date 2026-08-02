@@ -19,6 +19,6 @@
     "jest-extended/all"
   ],
   "transformIgnorePatterns": [
-    "node_modules/(?!(@paralleldrive/cuid2|@faker-js|@noble|otplib|@scure|@otplib)/)"
+    "node_modules/(?!.*(@paralleldrive/cuid2|@faker-js|@noble|otplib|@scure|@otplib))"
   ]
 }
