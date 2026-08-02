@@ -124,25 +124,60 @@ Una vez levantado el entorno con `./start.sh`, los servicios quedan expuestos en
 
 ---
 
-## ⚡ Patrones de Arquitectura e Infraestructura Aplicados
+## ⚡ Patrones de Arquitectura y Diseño Aplicados
 
-### 1. Hexagonal + CQRS (Clean Architecture)
-Cada módulo del backend desacopla estrictamente sus capas:
-* **Dominio**: Agregados (`DoctorProfile`, `Specialty`, `User`) con reglas invariantes, métodos estáticos de creación y sin dependencias de I/O ni frameworks.
-* **Aplicación**: Comandos (`CreateDoctorProfileCommand`, `CreateSpecialtyCommand`) y Consultas (`GetDoctorsQuery`) gestionadas de forma explícita mediante `@nestjs/cqrs`. Validaciones paralelizadas con `Promise.all`.
-* **Infraestructura**: Adaptadores de persistencia con Prisma (`PrismaDoctorProfileRepository`, `PrismaSpecialtyRepository`) y convertidores bidireccionales (`DoctorProfileMapper`, `SpecialtyMapper`).
+El proyecto implementa rigurosamente los patrones de diseño y arquitectura de software más robustos para aplicaciones enterprise:
 
-### 2. Patrón Decorador de Caché en Redis (`[BE-DOC-02]`)
-Para evitar contaminar los adaptadores de base de datos con lógica de almacenamiento en caché:
-* **`SpecialtyQueryServicePort`**: Define las operaciones de consulta.
-* **`CachedSpecialtyQueryService`**: Decorador que intercepta la lectura de especialidades activas (`specialties:active`), consulta la memoria en Redis (TTL 60s) y ejecuta la invalidación automática en los handlers de mutación (`POST`, `PATCH`, `DELETE`).
+### 1. Clean Architecture / Hexagonal Architecture (Ports & Adapters)
+Cada módulo del backend desacopla estrictamente sus tres capas principales:
+* **Dominio (`domain/`)**: Contiene la lógica central y reglas de negocio puras (`DoctorProfile`, `Specialty`, `User`). Es 100% independiente de frameworks, bases de datos o librerías de I/O.
+* **Aplicación (`application/`)**: Orquesta los casos de uso a través de comandos, consultas, DTOs de request/response y puertos (interfaces declaradas como `abstract class`).
+* **Infraestructura (`infrastructure/`)**: Implementa los adaptadores concretos (Prisma, Redis, NestJS Controllers, Passport Strategies, Mailers).
 
-### 3. Separación CQRS con Query Services (`[BE-DOC-01]`)
-* Las consultas de lectura paginadas (`GET /doctors`) utilizan un **Query Service** dedicado (`DoctorQueryServicePort` / `PrismaDoctorQueryService`), optimizado para paginación (`perPage`) y proyecciones sin la sobrecarga de cargar agregados completos de escritura.
+### 2. CQRS (Command Query Responsibility Segregation)
+Separación estricta entre operaciones que cambian el estado y operaciones de lectura:
+* **Write Side (Commands)**: Gestionados a través del `CommandBus` (`CreateDoctorProfileCommand`, `CreateSpecialtyCommand`), interactúan únicamente con repositorios de dominio y agregados completos.
+* **Read Side (Queries)**: Gestionados a través del `QueryBus` (`GetDoctorsQuery`, `GetSpecialtiesQuery`), consumen servicios de consulta dedicados para la vista.
 
-### 4. Pool de Conexiones Fail-Fast (Prisma + PostgreSQL)
-* **Fail Fast**: El timeout de espera de conexión está limitado a 5 segundos (`connectionTimeoutMillis: 5000`), evitando colapsar la RAM de Node.js por acumulación de peticiones pendientes ("efecto bola de nieve").
-* **Rendimiento**: Uso del adaptador nativo `PrismaPg` que evita penalizaciones por arranques en frío.
+### 3. Query Service Pattern (Read Side Desacoplado)
+* Las lecturas intensivas y paginadas (`GET /doctors`) utilizan **Query Services** especializados (`DoctorQueryServicePort` / `PrismaDoctorQueryService`), optimizados para búsquedas rápidas, proyecciones en DTOs y paginación (`perPage`), evitando la hidratación innecesaria de agregados de escritura.
+
+### 4. Decorator Pattern para Caché en Redis (`[BE-DOC-02]`)
+* Para evitar contaminar el adaptador primario de base de datos con lógica de caché, se implementa `CachedSpecialtyQueryService` que **decora** el servicio primario (`PrismaSpecialtyQueryService`). Intercepta lecturas públicas en Redis (`specialties:active`, 60s TTL) y expone un método de invalidación invocado automáticamente por los handlers de mutación (`POST`, `PATCH`, `DELETE`).
+
+### 5. Single Responsibility Principle (SRP) & Orchestration Pattern
+* Los handlers de comandos (`CreateDoctorProfileHandler`, `CreateSpecialtyHandler`) delegan cada validación de unicidad en métodos privados asíncronos independientes (`ensureNameIsUnique`, `ensureSlugIsUnique`, `ensureUserHasNoExistingProfile`), orquestados concurrentemente mediante `Promise.all`.
+
+### 6. Value Object (VO) Pattern
+* Encapsulación de invariantes de dominio en objetos de valor inmutables (ej. `Email` VO en `domain/entities/vo/email.vo.ts`), los cuales autocontienen sus propias reglas de validación y formateo.
+
+### 7. Static Factory Method Pattern
+* Las entidades de dominio (`User.create()`, `DoctorProfile.create()`, `Specialty.create()`) utilizan métodos de fábrica estáticos encargados de aplicar identificadores únicos (UUIDs), marcas de tiempo predeterminadas y transformaciones automáticas (ej. `Specialty.slugify` con normalización de caracteres diacríticos/acentos).
+
+### 8. Data Mapper Pattern (Domain ↔ Persistence)
+* Conversión bidireccional limpia entre modelos relacionales de Prisma y Agregados del Dominio a través de mappers dedicados (`UserMapper`, `DoctorProfileMapper`, `SpecialtyMapper`), exponiendo métodos estáticos `toDomain()`, `toCreateInput()` y `toUpdateInput()`.
+
+### 9. Unit of Work & Transaction Pattern
+* Abstracción mediante `UnitOfWorkInterface` (`PrismaUnitOfWork`) que envuelve operaciones atómicas multirepositorio en bloques `prisma.$transaction(...)` para garantizar consistencia ACID en mutaciones críticas.
+
+### 10. Distributed Locking Pattern (Redis Lock Facade)
+* Uso de `DISTRIBUTED_LOCK_SERVICE_INTERFACE` (`RedisLockModule`) para garantizar idempotencia y evitar race conditions en operaciones concurrentes distribuidas mediante operaciones atómicas `SET key id EX ttl NX` y scripts de liberación Lua.
+
+### 11. Test Factory Pattern (Service-Aware Test Fixtures)
+* Abstracción centralizada en `TestFactories` (`UserFactoryBuilder`, `DoctorProfileFactoryBuilder`, `SpecialtyFactoryBuilder`) que inyecta repositorios del contenedor de NestJS para la creación fluida y type-safe de datos de prueba en suites E2E (`TestFactories.user()`, `TestFactories.doctorProfile()`, `TestFactories.specialty()`).
+
+### 12. Role-Based Access Control (RBAC) & Guard Pattern
+* Autenticación JWT global mediante `JwtAuthGuard` combinada con metadatos explícitos `@Public()` (para endpoints abiertos) y `@Roles(UserRole.ADMIN, UserRole.DOCTOR)` validados en `RolesGuard`.
+
+### 13. Rate Limiting / Throttling Pattern
+* Protección global de la API frente a ataques de fuerza bruta mediante `CustomThrottlerGuard` y `ThrottlerModule`, permitiendo la superación controlada de límites en entornos de integración vía cabecera `x-force-throttler`.
+
+### 14. Global Exception Filter & Response Serialization Pattern
+* Intercepción centralizada de excepciones mediante `AllExceptionsFilter` para transformar errores no capturados en respuestas JSON HTTP estandarizadas.
+* Formateo unificado del contrato de respuestas API mediante `TransformInterceptor` (`{ data: ..., meta: ... }`).
+
+### 15. Fail-Fast Connection Pool Pattern (Prisma + PostgreSQL)
+* Configuración de la capa de persistencia con el adaptador nativo `PrismaPg` y límites de timeout estrictos (`connectionTimeoutMillis: 5000`), evitando el agotamiento de memoria en Node.js ante saturaciones de carga.
 
 ---
 
