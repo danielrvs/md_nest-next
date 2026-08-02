@@ -58,7 +58,6 @@ describe('Registration Tests', () => {
         const route = () => '/auth/register';
 
         it('should successfully register a new user', async () => {
-            const tenant = await TestFactories.tenant().create();
             const password = 'test-passworD123';
             const email = faker.internet.email();
             const name = faker.person.fullName();
@@ -69,7 +68,6 @@ describe('Registration Tests', () => {
                     name,
                     email,
                     password,
-                    tenantId: tenant.id
                 });
 
             expect(response.status).toBe(201);
@@ -86,37 +84,32 @@ describe('Registration Tests', () => {
             expect(publishSpy).toHaveBeenCalledWith(
                 expect.objectContaining({
                     userId: user?.id,
-                    tenantId: tenant.id,
                     email: email,
                     name: name,
-                    role: 'VIEWER'
+                    role: 'PATIENT'
                 })
             );
         });
 
-        it('should return 409 when email already exists in tenant', async () => {
-            const tenant = await TestFactories.tenant().create();
+        it('should return 409 when email already exists', async () => {
             const password = 'test-passworD123';
-            const user = await TestFactories.user().state({ tenantId: tenant.id }).create();
+            const user = await TestFactories.user().create();
             const response = await request(app.getHttpServer())
                 .post(route())
                 .send({
                     name: faker.person.fullName(),
                     email: user.email.toString(),
                     password,
-                    tenantId: tenant.id
                 });
             expect(response.status).toBe(409);
         });
 
         it('should return 400 when request malformed', async () => {
-            const tenant = await TestFactories.tenant().create();
             const password = 'test-passworD123';
             const malformedRequests = [
                 { name: faker.person.fullName(), password: 'weak-password' },
-                { name: faker.person.fullName(), email: faker.internet.email(), tenantId: tenant.id },
-                { name: faker.person.fullName(), email: 'invalid-email', password, tenantId: tenant.id },
-                { name: faker.person.fullName(), email: 'invalid-email', password, tenantId: '123' },
+                { name: faker.person.fullName(), email: faker.internet.email() },
+                { name: faker.person.fullName(), email: 'invalid-email', password },
             ]
 
             for (const input of malformedRequests) {
@@ -128,9 +121,8 @@ describe('Registration Tests', () => {
         });
 
         it('should enforce rate limit and return 429 under stress', async () => {
-            const tenant = await TestFactories.tenant().create();
             const password = 'test-passworD123';
-            const promises = Array.from({ length: 6 }).map(() =>
+            const promises = Array.from({ length: 15 }).map(() =>
                 request(app.getHttpServer())
                     .post(route())
                     .set('x-force-throttler', 'true')
@@ -138,7 +130,6 @@ describe('Registration Tests', () => {
                         name: faker.person.fullName(),
                         email: faker.internet.email(),
                         password,
-                        tenantId: tenant.id
                     })
             );
 

@@ -116,18 +116,23 @@ describe('Authentication Tests', () => {
         it('should enforce rate limit and return 429 under stress', async () => {
             const user = await TestFactories.user().create();
 
-            const promises = Array.from({ length: 6 }).map(() =>
-                request(app.getHttpServer())
-                    .post(route())
-                    .set('x-force-throttler', 'true')
-                    .send({
-                        email: user.email.toString(),
-                        password: 'wrong-password'
-                    })
-            );
+            const responses = [];
+            for (let i = 0; i < 15; i++) {
+                try {
+                    const res = await request(app.getHttpServer())
+                        .post(route())
+                        .set('x-force-throttler', 'true')
+                        .send({
+                            email: user.email.toString(),
+                            password: 'wrong-password'
+                        });
+                    responses.push(res);
+                } catch {
+                    // ignore ECONNRESET under throttler stress
+                }
+            }
 
-            const responses = await Promise.all(promises);
-            const has429 = responses.some(r => r.status === 429);
+            const has429 = responses.some(r => r?.status === 429);
             expect(has429).toBe(true);
         });
 

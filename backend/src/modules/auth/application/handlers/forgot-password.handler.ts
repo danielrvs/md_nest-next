@@ -24,3 +24,4 @@ export class ForgotPasswordHandler implements ICommandHandler<ForgotPasswordComm
         //TODO: outbox pattern, but too long for a demo project :( 
     }
 }
+

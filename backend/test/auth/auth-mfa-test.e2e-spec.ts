@@ -142,7 +142,7 @@ describe('MFA Challenge & Activation Integration Tests', () => {
             expect(response.status).toBe(200);
 
 
-            const cookies = response.get('Set-Cookie').join(';');
+            const cookies = (response.get('Set-Cookie') || []).join(';');
             expect(cookies).toContain('access_token=');
             expect(cookies).toContain('HttpOnly');
             expect(cookies).toContain('Secure');
