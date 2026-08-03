@@ -21,7 +21,7 @@
 /
 ├── backend/          # NestJS API server
 │   ├── src/
-│   │   ├── modules/  # Domain modules (auth, users, …)
+│   │   ├── modules/  # Domain modules (auth, users, doctors, specialties, …)
 │   │   └── shared/   # Cross-cutting infrastructure
 │   ├── prisma/       # Prisma schema & migrations
 │   └── test/         # E2E & integration tests (Jest)
@@ -50,6 +50,7 @@ modules/<name>/
     commands/      # Immutable command objects
     queries/       # Immutable query objects
     handlers/      # CommandHandler / QueryHandler classes / EventHandler Classes
+    ports/         # Application ports (Query Services, Mailer ports)
     dtos/          # Request & Response DTOs (class-validator)
     events/        # Application-level event handlers
   infrastructure/  # Framework & I/O concerns
@@ -59,7 +60,7 @@ modules/<name>/
     processors/    # BullMQ processors
     mappers/       # Domain ↔ Persistence mappers
     config/        # Module-scoped config factories
-    services/      # Services definitions related to infrastructure as query services
+    services/      # Query Services, Cache Decorators, Infrastructure services
 ```
 
 **Rules:**
@@ -67,20 +68,24 @@ modules/<name>/
 - Ports are declared as `abstract class` (not `interface`) to allow NestJS DI injection tokens.
 - Application handlers must **not** import Prisma types directly; they receive/return domain objects.
 
-### 1.2 CQRS Pattern
+### 1.2 CQRS & Query Services Pattern
 
 - Use `@nestjs/cqrs` for **all** state-changing operations (`CommandBus`) and read operations that benefit from explicit intent (`QueryBus`).
-- Commands are plain, immutable TS classes (readonly properties, no decorators).
-- Handlers are decorated with `@CommandHandler(MyCommand)` or `@QueryHandler(MyQuery)`.
-- Events are dispatched via `EventBus`; handlers are decorated with `@EventsHandler(MyEvent)`.
+- **Write Side (Commands)**: Handlers interact exclusively with domain aggregate roots and repository ports (`DoctorProfileRepositoryPort`).
+- **Read Side (Queries)**: Query handlers **must not** query write-repositories directly. They must consume dedicated **Query Services** (`DoctorQueryServicePort`, `SpecialtyQueryServicePort`) located in `application/ports/` and implemented in `infrastructure/services/`.
 
-### 1.3 Unit of Work & Transactions
+### 1.3 Caching Decorator Pattern
+
+- Read-side Query Services that require caching **must use the Decorator Pattern** (`CachedSpecialtyQueryService` decorating `SpecialtyQueryServicePort`), injecting NestJS `CACHE_MANAGER` Redis cache with 60s default TTL.
+- Command handlers modifying state **must explicitly call `queryService.invalidateCache()`** upon creating, updating, or deleting entities.
+
+### 1.4 Unit of Work & Transactions
 
 - Use `UnitOfWorkInterface` (symbol `UNIT_OF_WORK_INTERFACE`) for cross-repository atomic operations.
 - `PrismaUnitOfWork` wraps operations in `prisma.$transaction(async (tx) => { … })`.
 - Repositories **inside** a transaction must accept `Prisma.TransactionClient | PrismaService` in their constructors.
 
-### 1.4 Distributed Locking
+### 1.5 Distributed Locking
 
 - Inject `DISTRIBUTED_LOCK_SERVICE_INTERFACE` (provided by `RedisLockModule`) for any operation that must be idempotent across concurrent requests.
 - The lock facade uses `SET key identifier EX ttl NX` + a Lua atomic release script — never call `DEL` directly.
@@ -89,34 +94,32 @@ modules/<name>/
 
 ## 2 — Coding Conventions
 
-### 2.1 TypeScript
+### 2.1 Domain Entities
 
-- **Strict mode** is enabled (`strict: true`). Never use `any` without an explicit `// eslint-disable` comment explaining the justification.
-- Prefer `unknown` over `any` for error catches; narrow types before use.
-- Use `readonly` for entity constructor parameters and command properties.
-- Value Objects (VOs) live in `domain/entities/vo/` and encapsulate validation logic internally.
+- **Static Factory**: Every domain entity MUST include a `static create(data): Entity` method for controlled instantiation.
+- **Mutability**: Identity properties (`id`, `userId`, `createdAt`) are `public readonly`. Updatable domain properties must be `public` (mutable).
+- **Domain Methods**: Entities MUST expose explicit domain action/mutation methods (`update(...)`, `verify()`, `unverify()`, `activate()`, `deactivate()`). Never assign properties directly from handlers.
+- **Value Objects**: Email fields MUST use the `Email` Value Object (`Email.create(...)`).
 
-### 2.2 NestJS
+### 2.2 Application Handlers (SOLID Rules)
 
-- Use **constructor injection** only; avoid property injection (`@Inject()` on fields).
-- Register module-wide DI tokens as `{ provide: MyPort, useClass: MyAdapter }` inside the module's `providers` array.
-- Mark modules as `@Global()` only when truly cross-cutting (e.g., `PrismaModule`, `RedisCacheModule`, `RedisLockModule`).
-- Controllers must be thin: dispatch commands/queries, set HTTP cookies/status, and return DTOs. No business logic.
-- Use the `@Public()` decorator for unauthenticated endpoints; the JWT guard is applied globally.
-- Rate limiting is enforced globally via `CustomThrottlerGuard`; do not bypass it without justification.
+- **Single Responsibility Principle**: Do not condense multiple validation steps into a single monolithic function.
+- **Orchestration Pattern**: Keep `execute(command)` high-level and declarative.
+- **Private Helper Methods**: Separate distinct validation steps into private async helper methods (e.g. `ensureUserHasNoExistingProfile`, `ensureNameIsUnique`).
+- **Parallel Validation**: Independent async validations MUST be parallelized using `Promise.all([ this.funcA(), this.funcB() ])`.
+- **Aggregate Root Invariants**: Never bypass aggregate roots with custom DB update methods (e.g. `updateVerificationStatus`). Handlers MUST load the aggregate via `findById`, call domain methods (`profile.verify()`), and save the aggregate with `repository.save(profile)`.
 
-### 2.3 DTOs & Validation
+### 2.3 Persistence Mappers
+
+- Repositories (`save()`) MUST NOT construct inline Prisma create/update objects.
+- All Mappers (`UserMapper`, `DoctorProfileMapper`, `SpecialtyMapper`) MUST expose `static toCreateInput(...)` and `static toUpdateInput(...)` methods.
+
+### 2.4 DTOs, Pagination & Validation
 
 - All request DTOs live in `application/dtos/` and use `class-validator` decorators.
 - All response DTOs use `@ApiProperty()` from `@nestjs/swagger` with realistic `example` values.
+- **Pagination Standard**: Always use `perPage` instead of `limit` for pagination parameters across DTOs, queries, handlers, and repositories.
 - Never expose internal domain objects or Prisma models directly from controllers.
-- Use `@Expose()` + `plainToInstance()` for controlled serialization.
-
-### 2.4 Error Handling
-
-- Throw NestJS `HttpException` subclasses **only from controllers or application handlers** (not from domain entities or ports).
-- Domain-level invariant violations should throw plain `Error` subclasses and be caught/translated at the application layer.
-- The `RedisLockFacade` throws `ConflictException` (409) when a lock cannot be acquired.
 
 ### 2.5 Naming Conventions
 
@@ -124,8 +127,12 @@ modules/<name>/
 |---|---|---|
 | Command | `<Action><Context>Command` | `LoginCommand` |
 | CommandHandler | `<Action><Context>Handler` | `LoginHandler` |
+| Query | `Get<Context>Query` | `GetDoctorsQuery` |
+| QueryHandler | `Get<Context>Handler` | `GetDoctorsHandler` |
 | Repository Port | `<Entity>RepositoryPort` | `UserRepositoryPort` |
+| Query Service Port | `<Entity>QueryServicePort` | `SpecialtyQueryServicePort` |
 | Prisma Adapter | `Prisma<Entity>Repository` | `PrismaUserRepository` |
+| Caching Decorator | `Cached<Entity>QueryService` | `CachedSpecialtyQueryService` |
 | DTO (Request) | `<Action>ReqDto` | `LoginReqDto` |
 | DTO (Response) | `<Action>ResDto` | `LoginResDto` |
 | Module | `<Context>Module` | `AuthModule` |
@@ -135,7 +142,7 @@ modules/<name>/
 
 - One class per file.
 - File names use `kebab-case` with a descriptive suffix: `.entity.ts`, `.command.ts`, `.handler.ts`, `.port.ts`, `.adapter.ts`, `.controller.ts`, `.module.ts`, `.dto.ts`.
-- Path alias `@/` maps to `backend/src/`. Use it for all intra-project imports (never relative `../../..` beyond two levels, and avoid as possible).
+- Path alias `@/` maps to `backend/src/`. Use it for all intra-project imports.
 - Generated Prisma client is at `generated/prisma/client`; import as `import { PrismaClient } from '@/../generated/prisma/client'`.
 
 ---
@@ -154,6 +161,7 @@ modules/<name>/
 |---|---|
 | `User` | Roles: `ADMIN`, `DOCTOR`, `PATIENT`. Has MFA, refresh tokens, doctor profile relation. |
 | `DoctorProfile` | One-to-one with `User`. Stores license, bio, fee, avatar, specialties. |
+| `Specialty` | Medical specialty catalog (name, slug with diacritics stripping, description, icon, image, isActive). |
 | `Appointment` | Links patient & doctor `User`s. Status enum: `PENDING → CONFIRMED → COMPLETED/CANCELLED/NO_SHOW`. |
 | `ScheduleRules` | Weekly recurring availability slots per doctor (day, HH:mm range, duration, buffer). |
 | `ScheduleAbsences` | Doctor absence windows that override `ScheduleRules`. |
@@ -171,18 +179,11 @@ modules/<name>/
 - Backup codes are hashed before storage; each code is single-use.
 - Password reset tokens are hashed (stored in `passwordResetToken`) with an expiry (`passwordResetExpiresAt`).
 - The `@Public()` decorator exempts an endpoint from the JWT guard.
+- Role-based authorization is enforced via `@Roles(UserRole.ADMIN, UserRole.DOCTOR)` decorator and `RolesGuard`.
 
 ---
 
-## 5 — Messaging (RabbitMQ & BullMQ)
-
-- **RabbitMQ** (`@golevelup/nestjs-rabbitmq`) is the inter-service event bus for domain events.
-- Processors live in `infrastructure/processors/` and must be decorated with `@Processor('queue-name')`.
-- Event handlers that send emails must enqueue jobs to BullMQ — never call the mailer synchronously from a handler.
-
----
-
-## 6 — Caching (Redis)
+## 5 — Caching (Redis)
 
 - Two distinct Redis integrations exist; do not conflate them:
   1. **`RedisCacheModule`** — NestJS `@nestjs/cache-manager` with `@keyv/redis`. Inject `CACHE_MANAGER` token. Default TTL: 60 s. Has exponential reconnect strategy.
@@ -191,38 +192,17 @@ modules/<name>/
 
 ---
 
-## 7 — Testing
+## 6 — Testing & Test Factories
 
 - **Unit tests**: `*.spec.ts` alongside source files. Run with `pnpm test`.
-- **E2E tests**: `backend/test/**/*.e2e-spec.ts`. Run with `pnpm test:e2e`. Use a separate test DB (`.env.test`).
-- Use the `TestFactories` pattern (see KI: *NestJS Test Factory Pattern*) for creating test fixtures with Prisma.
+- **E2E tests**: `backend/test/**/*.e2e-spec.ts`. Run with `pnpm test:e2e` inside Docker container (`docker exec md_nestjs npm run test:e2e`).
+- **Test Factories Pattern**: Every domain entity MUST have a builder in `test/factories/` registered in `TestFactories` (`TestFactories.user()`, `TestFactories.doctorProfile()`, `TestFactories.specialty()`).
+- E2E tests MUST use `TestFactories` to create test fixtures rather than direct `prisma.model.create(...)` calls.
 - E2E tests use `supertest` against a real NestJS application bootstrapped with `@nestjs/testing`.
-- Test commands run via `env-cmd -f .env.test` to load the test environment.
-- Mock external ports (mailer, MFA generator) using `jest.fn()` or `{ provide: Port, useValue: mockObject }`.
 
 ---
 
-## 8 — Frontend (Next.js)
-
-- Uses **App Router** (not Pages Router). All routes live under `frontend/app/`.
-- Styled with **Tailwind CSS v4**. Do not introduce other CSS frameworks.
-- Fetch data using React Server Components where possible; use client components only for interactivity.
-- Use shadcnui components only.
-- API calls go to `http://localhost:3000` (backend) in development.
-
----
-
-## 9 — Infrastructure & DevOps
-
-- All services are defined in `infrastructure/docker-compose.dev.yml`.
-- Start the full stack with `./start.sh`; stop with `./stop.sh` from the project root.
-- The backend container mounts `../backend` as a volume for hot-reload.
-- Never commit `.env` files with real secrets. Use the `.env.example` pattern.
-- Prisma schema changes require running `pnpm test:db:push` (against the test DB) before writing E2E tests.
-
----
-
-## 10 — Agent Behavioral Rules
+## 7 — Agent Behavioral Rules
 
 1. **Read before writing.** Always inspect existing code in the relevant module before creating new files.
 2. **Respect layer boundaries.** Never import infrastructure concerns into the domain layer.
@@ -232,5 +212,7 @@ modules/<name>/
 6. **Document ports.** New abstract port classes must include a JSDoc comment describing the contract.
 7. **Validate DTOs.** Every request DTO must use `class-validator` decorators. Never trust raw user input.
 8. **Security by default.** New endpoints are authenticated by default. Explicitly add `@Public()` only if the business requirement demands it and document the reason.
-9. **Consult KIs.** Before implementing cross-cutting patterns (guards, validation, test factories), check the Knowledge Items in the knowledge base for established patterns.
-10. **Ask before breaking.** If a change requires modifying a shared interface (port, UoW, shared module), surface the impact and ask for confirmation before proceeding.
+9. **Use Mappers and Query Services.** Always delegate Prisma payload creation to Mappers (`toCreateInput`/`toUpdateInput`) and read queries to Query Services.
+10. **Use TestFactories.** E2E tests must always construct test fixtures using `TestFactories.<entity>()`.
+11. **Ask before breaking.** If a change requires modifying a shared interface (port, UoW, shared module), surface the impact and ask for confirmation before proceeding.
+
